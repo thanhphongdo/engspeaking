@@ -6,27 +6,52 @@ import {
   installVueDevtools
 } from 'vue-cli-plugin-electron-builder/lib'
 const isDevelopment = process.env.NODE_ENV !== 'production'
+const fs = require('fs');
+const mkdirp = require('mkdirp');
+const getDirName = require('path').dirname;
+const TextToSpeechV1 = require('ibm-watson/text-to-speech/v1');
+const { ipcMain } = require('electron');
+const express = require('express');
+const path = require('path');
 
-// Keep a global reference of the window object, if you don't, the window will
-// be closed automatically when the JavaScript object is garbage collected.
+const textToSpeech = new TextToSpeechV1({
+  iam_apikey: 'iTfvMwKtpAys7Z35cXjTmYvfY8bsglh4-40p6-8qiCKG',
+  url: 'https://gateway-syd.watsonplatform.net/text-to-speech/api'
+});
+
+var appExpress = express();
+
 let win: BrowserWindow | null
 
-// Scheme must be registered before the app is ready
-protocol.registerSchemesAsPrivileged([{scheme: 'app', privileges: { secure: true, standard: true } }])
+protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { secure: true, standard: true } }])
 
-function createWindow () {
-  // Create the browser window.
-  win = new BrowserWindow({ width: 800, height: 600, webPreferences: {
-    nodeIntegration: true
-  } })
+function createWindow() {
+  // if (!fs.existsSync('./audio')) {
+  //   fs.mkdirSync('./audio');
+  // }
+  if (!fs.existsSync(path.join(__dirname, './audio'))) {
+    fs.mkdirSync(path.join(__dirname, './audio'));
+  }
+  
+  console.log('-------------------------');
+  appExpress.use(express.static(path.join(__dirname, './audio')));
+  appExpress.get('/', (req: any, res: any) => {
+    // res.send('Hello World!')
+    res.sendFile(path.join(__dirname, './audio/hw.mp3'));
+  });
+  appExpress.listen(8081, () => console.log(`Example app listening on port ${8081}!`));
+  console.log('=========================');
+  win = new BrowserWindow({
+    width: 800, height: 600, webPreferences: {
+      nodeIntegration: true
+    }
+  })
 
   if (process.env.WEBPACK_DEV_SERVER_URL) {
-    // Load the url of the dev server if in development mode
     win.loadURL(process.env.WEBPACK_DEV_SERVER_URL as string)
     if (!process.env.IS_TEST) win.webContents.openDevTools()
   } else {
     createProtocol('app')
-    // Load the index.html when not in development
     win.loadURL('app://./index.html')
   }
 
@@ -35,45 +60,24 @@ function createWindow () {
   })
 }
 
-// Quit when all windows are closed.
 app.on('window-all-closed', () => {
-  // On macOS it is common for applications and their menu bar
-  // to stay active until the user quits explicitly with Cmd + Q
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
 
 app.on('activate', () => {
-  // On macOS it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
   if (win === null) {
     createWindow()
   }
 })
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
   if (isDevelopment && !process.env.IS_TEST) {
-    // Install Vue Devtools
-    // Devtools extensions are broken in Electron 6.0.0 and greater
-    // See https://github.com/nklayman/vue-cli-plugin-electron-builder/issues/378 for more info
-    // Electron will not launch with Devtools extensions installed on Windows 10 with dark mode
-    // If you are not using Windows 10 dark mode, you may uncomment these lines
-    // In addition, if the linked issue is closed, you can upgrade electron and uncomment these lines
-    // try {
-    //   await installVueDevtools()
-    // } catch (e) {
-    //   console.error('Vue Devtools failed to install:', e.toString())
-    // }
-
   }
   createWindow()
 })
 
-// Exit cleanly on request from parent process in development mode.
 if (isDevelopment) {
   if (process.platform === 'win32') {
     process.on('message', data => {
@@ -87,3 +91,41 @@ if (isDevelopment) {
     })
   }
 }
+
+
+ipcMain.on('test', (event, arg) => {
+  console.log('test..............');
+  console.log(arg);
+
+  function writeFile(path: any, contents: any, cb: any) {
+    mkdirp(getDirName(path), function (err: any) {
+      if (err) return cb(err);
+      else {
+        cb(fs.writeFile(path, contents));
+      }
+    });
+  }
+
+  const synthesizeParams = {
+    text: 'Hello world',
+    accept: 'audio/mp3',
+    voice: 'en-US_AllisonVoice',
+  };
+
+  textToSpeech.synthesize(synthesizeParams)
+    .then((audio: any) => {
+      console.log('....................0');
+      // const name = 'a_' + Math.floor(Math.random() * 1000000000);
+      const name = 'hw';
+      // const stream = fs.createWriteStream(`./audio/${name}.mp3`);
+      const stream = fs.createWriteStream(path.join(__dirname, './audio/hw.mp3'));
+      stream.on('close', (data: any) => {
+        console.log('close..........');
+        console.log(data);
+      });
+      audio.pipe(stream);
+    })
+    .catch((err: any) => {
+      console.log('error:', err);
+    });
+})
